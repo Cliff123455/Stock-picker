@@ -78,6 +78,7 @@ export function useStockWebSocket(symbols = []) {
         console.error('WebSocket error:', event);
         setError('Connection error occurred');
         setConnectionStatus('error');
+        // Don't throw the error, just log it
       };
 
       ws.current.onclose = (event) => {
@@ -92,7 +93,8 @@ export function useStockWebSocket(symbols = []) {
       };
     } catch (err) {
       console.error('Failed to connect:', err);
-      setError(err.message);
+      setError(err.message || 'Connection failed');
+      setConnectionStatus('error');
       scheduleReconnect();
     }
   }, []);

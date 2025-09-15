@@ -75,10 +75,14 @@ export async function GET(
       throw new Error('No data available for this symbol');
     }
 
-    // Format data for recharts
+    // Format data for candlestick chart with OHLC data
     const chartData = data.t.map((timestamp: number, index: number) => ({
       timestamp: timestamp * 1000, // Convert to milliseconds
-      price: data.c[index] // closing price
+      open: data.o[index], // opening price
+      high: data.h[index], // high price
+      low: data.l[index],  // low price
+      close: data.c[index], // closing price
+      volume: data.v ? data.v[index] : 0 // volume
     }));
 
     const currentPrice = data.c[data.c.length - 1];
@@ -109,16 +113,28 @@ function generateMockData(range: string) {
   const basePrice = 150;
   
   const chartData = Array.from({ length: dataPoints }, (_, i) => {
-    const variance = (Math.random() - 0.5) * 5;
+    const basePriceForPeriod = basePrice + (i * 0.1);
+    const volatility = 2 + Math.random() * 3; // Random volatility between 2-5
+    
+    // Generate realistic OHLC data
+    const open = basePriceForPeriod + (Math.random() - 0.5) * volatility;
+    const close = open + (Math.random() - 0.5) * volatility;
+    const high = Math.max(open, close) + Math.random() * volatility;
+    const low = Math.min(open, close) - Math.random() * volatility;
+    
     return {
       timestamp: now - (dataPoints - i) * (range === '1d' ? 300000 : 86400000),
-      price: basePrice + variance + (i * 0.1)
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      close: Number(close.toFixed(2)),
+      volume: Math.floor(Math.random() * 1000000) + 100000
     };
   });
 
   return {
     chartData,
-    currentPrice: chartData[chartData.length - 1].price,
+    currentPrice: chartData[chartData.length - 1].close,
     priceChange: 2.45,
     previousClose: 147.55,
     marketState: 'REGULAR'
