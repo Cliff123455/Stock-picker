@@ -17,6 +17,17 @@ export async function GET(request: NextRequest) {
 
     console.log(`Analyzing stock: ${symbol}`);
 
+    // Check if Alpaca API keys are configured
+    const hasAlpacaKeys = process.env.ALPACA_API_KEY && process.env.ALPACA_SECRET_KEY;
+    
+    if (!hasAlpacaKeys) {
+      return NextResponse.json({
+        success: false,
+        error: 'Alpaca API keys not configured',
+        message: 'Please configure your Alpaca API keys to use stock analysis features'
+      }, { status: 503 });
+    }
+
     // Get historical data for technical analysis
     const bars = await alpacaService.getBars([symbol], '1Day', 200);
     const latestBars = await alpacaService.getLatestBars([symbol]);

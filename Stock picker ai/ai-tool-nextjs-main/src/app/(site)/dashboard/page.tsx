@@ -6,6 +6,10 @@ import MarketOverview from '@/components/Dashboard/MarketOverview';
 import TradingSignals from '@/components/Dashboard/TradingSignals';
 import PortfolioSummary from '@/components/Dashboard/PortfolioSummary';
 import { StockScreener } from '@/components/StockScreener';
+import RealTimeStockPrice from '@/components/RealTimeStockPrice';
+import StockChart from '@/components/StockChart';
+import { useStockWebSocket } from '@/hooks/useStockWebSocket';
+import SetupInstructions from '@/components/SetupInstructions';
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -14,13 +18,43 @@ export default function Dashboard() {
   const [stocks, setStocks] = useState<StockData[]>([]);
   const [crypto, setCrypto] = useState<CryptoData[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [apiStatus, setApiStatus] = useState<any>(null);
+  
+  // Real-time WebSocket functionality
+  const [watchlist, setWatchlist] = useState(['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN']);
+  const [newSymbol, setNewSymbol] = useState('');
+  const [selectedStock, setSelectedStock] = useState('AAPL');
+  
+  // Subscribe to all watchlist symbols at once
+  const { prices, connectionStatus } = useStockWebSocket(watchlist);
 
   useEffect(() => {
     checkApiKeysAndLoadData();
   }, []);
 
+  // Watchlist management functions
+  const addToWatchlist = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newSymbol && !watchlist.includes(newSymbol.toUpperCase())) {
+      setWatchlist([...watchlist, newSymbol.toUpperCase()]);
+      setNewSymbol('');
+    }
+  };
+
+  const removeFromWatchlist = (symbol: string) => {
+    setWatchlist(watchlist.filter(s => s !== symbol));
+    if (selectedStock === symbol) {
+      setSelectedStock(watchlist[0] || '');
+    }
+  };
+
   const checkApiKeysAndLoadData = async () => {
     try {
+      // First check API status
+      const statusResponse = await fetch('/api/status');
+      const status = await statusResponse.json();
+      setApiStatus(status);
+
       // Check if API keys are configured by trying to fetch data
       const [stocksResponse, cryptoResponse, portfolioResponse] = await Promise.allSettled([
         fetch('/api/stocks'),
@@ -108,6 +142,118 @@ export default function Dashboard() {
               {/* Portfolio Summary */}
               {portfolio && <PortfolioSummary portfolio={portfolio} />}
               
+              {/* Real-time Watchlist Section */}
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Real-Time Watchlist</h2>
+                  <ConnectionBadge status={connectionStatus} />
+                </div>
+                
+                {/* Add Stock Form */}
+                <form onSubmit={addToWatchlist} className="mb-6">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newSymbol}
+                      onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                      placeholder="Enter stock symbol (e.g., AAPL)"
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Add to Watchlist
+                    </button>
+                  </div>
+                </form>
+
+                {/* Main Chart */}
+                {selectedStock && (
+                  <div className="mb-6">
+                    <StockChart symbol={selectedStock} />
+                  </div>
+                )}
+
+                {/* Stock Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {watchlist.map(symbol => (
+                    <div 
+                      key={symbol} 
+                      className={`relative group cursor-pointer ${selectedStock === symbol ? 'ring-2 ring-blue-500' : ''}`}
+                      onClick={() => setSelectedStock(symbol)}
+                    >
+                      <RealTimeStockPrice symbol={symbol} />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromWatchlist(symbol);
+                        }}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <svg className="w-5 h-5 text-gray-500 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Price Summary Table */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Live Price Summary</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Symbol
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Price
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Change
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Last Update
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {watchlist.map(symbol => {
+                          const data = (prices as Record<string, any>)[symbol];
+                          return (
+                            <tr 
+                              key={symbol}
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => setSelectedStock(symbol)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {symbol}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${data?.price?.toFixed(2) || '---'}
+                              </td>
+                              <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                data?.change >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {data?.change?.toFixed(2) || '---'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {data?.timestamp 
+                                  ? new Date(data.timestamp).toLocaleTimeString() 
+                                  : '---'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              
               {/* Stock Screener */}
               <StockScreener />
               
@@ -120,80 +266,179 @@ export default function Dashboard() {
           ) : (
             /* Setup Instructions */
             <div>
+              {apiStatus && (
+                <SetupInstructions 
+                  hasAlpacaKeys={apiStatus.alpaca.configured}
+                  hasFinnhubKeys={apiStatus.finnhub.configured}
+                />
+              )}
+
+              {/* Real-time Watchlist (works without API keys) */}
               <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">🚀 Welcome to Stock Picker Pro!</h2>
-                <p className="text-gray-600 mb-4">
-                  Your professional trading dashboard is ready! To start using it, you need to set up your Alpaca API keys.
-                </p>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Real-Time Watchlist</h2>
+                  <div className="flex items-center gap-2">
+                    <ConnectionBadge status={connectionStatus} />
+                    {apiStatus && !apiStatus.finnhub.configured && (
+                      <span className="text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded">
+                        Limited functionality - Add Finnhub API key for full features
+                      </span>
+                    )}
+                  </div>
+                </div>
                 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">Next Steps:</h3>
-                  <ol className="list-decimal list-inside text-blue-800 space-y-2">
-                    <li>Copy the environment template: <code className="bg-blue-100 px-2 py-1 rounded">copy "Files for review\env-local-template.txt" ".env.local"</code></li>
-                    <li>Edit <code className="bg-blue-100 px-2 py-1 rounded">.env.local</code> and add your Alpaca API keys</li>
-                    <li>Get your API keys from <a href="https://alpaca.markets" target="_blank" className="text-blue-600 underline">Alpaca Markets</a></li>
-                    <li>Refresh this page to see your trading dashboard</li>
-                  </ol>
+                {/* Add Stock Form */}
+                <form onSubmit={addToWatchlist} className="mb-6">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newSymbol}
+                      onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                      placeholder="Enter stock symbol (e.g., AAPL)"
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Add to Watchlist
+                    </button>
+                  </div>
+                </form>
+
+                {/* Main Chart */}
+                {selectedStock && (
+                  <div className="mb-6">
+                    <StockChart symbol={selectedStock} />
+                  </div>
+                )}
+
+                {/* Stock Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {watchlist.map(symbol => (
+                    <div 
+                      key={symbol} 
+                      className={`relative group cursor-pointer ${selectedStock === symbol ? 'ring-2 ring-blue-500' : ''}`}
+                      onClick={() => setSelectedStock(symbol)}
+                    >
+                      <RealTimeStockPrice symbol={symbol} />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromWatchlist(symbol);
+                        }}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <svg className="w-5 h-5 text-gray-500 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-green-50 rounded-lg p-4">
-                    <div className="text-green-600 text-2xl mb-2">📊</div>
-                    <h3 className="font-semibold text-green-900">RSI Analysis</h3>
-                    <p className="text-sm text-green-700">30-70 range signals</p>
+                {/* Price Summary Table */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Live Price Summary</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Symbol
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Price
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Change
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Last Update
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {watchlist.map(symbol => {
+                          const data = (prices as Record<string, any>)[symbol];
+                          return (
+                            <tr 
+                              key={symbol}
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => setSelectedStock(symbol)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {symbol}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${data?.price?.toFixed(2) || '---'}
+                              </td>
+                              <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                                data?.change >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {data?.change?.toFixed(2) || '---'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {data?.timestamp 
+                                  ? new Date(data.timestamp).toLocaleTimeString() 
+                                  : '---'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    <div className="text-blue-600 text-2xl mb-2">📈</div>
-                    <h3 className="font-semibold text-blue-900">MACD Signals</h3>
-                    <p className="text-sm text-blue-700">12,26,9 settings</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-4">
-                    <div className="text-purple-600 text-2xl mb-2">🎯</div>
-                    <h3 className="font-semibold text-purple-900">Bollinger Bands</h3>
-                    <p className="text-sm text-purple-700">Volatility analysis</p>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-4">
-                    <div className="text-orange-600 text-2xl mb-2">⚡</div>
-                    <h3 className="font-semibold text-orange-900">VWAP</h3>
-                    <p className="text-sm text-orange-700">Volume weighted price</p>
-                  </div>
-                </div>
-
-                <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">🔍 Stock Screener & Watch List</h3>
-                  <p className="text-gray-600 mb-4">
-                    Search for any stock symbol and get comprehensive technical analysis with all four indicators:
-                  </p>
-                  <ul className="text-gray-600 space-y-1">
-                    <li>• <strong>RSI (Relative Strength Index)</strong> - Identify overbought/oversold conditions</li>
-                    <li>• <strong>MACD (12,26,9)</strong> - Spot trend changes and momentum shifts</li>
-                    <li>• <strong>Bollinger Bands (20,2)</strong> - Measure volatility and price extremes</li>
-                    <li>• <strong>VWAP</strong> - Volume-weighted average price for institutional reference</li>
-                  </ul>
-                  <p className="text-sm text-gray-500 mt-3">
-                    Build your watch list and get real-time analysis for all your favorite stocks!
-                  </p>
                 </div>
               </div>
 
-              {/* Placeholder for when API is connected */}
+              {/* Additional Features Info */}
               <div className="bg-gray-100 rounded-lg p-8 text-center">
                 <div className="text-gray-400 text-6xl mb-4">🔑</div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">API Keys Required</h3>
-                <p className="text-gray-600">
-                  Once you add your Alpaca API keys, you'll see:
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Additional Features Available</h3>
+                <p className="text-gray-600 mb-4">
+                  Configure your API keys to unlock these professional features:
                 </p>
-                <ul className="text-gray-600 mt-4 space-y-1">
-                  <li>• Real-time stock and crypto data</li>
-                  <li>• Professional trading signals</li>
-                  <li>• Portfolio management</li>
-                  <li>• Market analysis dashboard</li>
-                </ul>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                  <div className="bg-white rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">With Alpaca API:</h4>
+                    <ul className="text-gray-600 text-sm space-y-1">
+                      <li>• Portfolio management and tracking</li>
+                      <li>• Professional trading signals</li>
+                      <li>• Market analysis dashboard</li>
+                      <li>• Advanced stock screener</li>
+                    </ul>
+                  </div>
+                  <div className="bg-white rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">With Finnhub API:</h4>
+                    <ul className="text-gray-600 text-sm space-y-1">
+                      <li>• Real-time stock quotes</li>
+                      <li>• Interactive charts</li>
+                      <li>• Live price updates</li>
+                      <li>• Historical data analysis</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function ConnectionBadge({ status }: { status: string }) {
+  const badges = {
+    connected: 'bg-green-100 text-green-800',
+    disconnected: 'bg-gray-100 text-gray-800',
+    reconnecting: 'bg-yellow-100 text-yellow-800',
+    error: 'bg-red-100 text-red-800'
+  };
+
+  return (
+    <span className={`px-2 py-1 text-xs rounded-full font-medium ${badges[status as keyof typeof badges] || badges.disconnected}`}>
+      {status}
+    </span>
   );
 }
